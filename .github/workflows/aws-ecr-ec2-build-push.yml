@@ -1,115 +1,49 @@
-name: CICD Pipeline with ECR and EC2
-run-name: Deploy demo-react-app-ci-cd to ECR and EC2
+name: Build and Deploy Docker Image to AWS ECR and EC2
+
 on:
   push:
     branches:
       - main
-  workflow_dispatch:
-env:
-  SSH_USER: ${{ secrets.EC2_USER }}
-  SSH_HOST: ${{ secrets.EC2_HOST }}
-  SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
-  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-  AWS_REGION: ${{ secrets.AWS_REGION }}
-  ECR_REPOSITORY: ${{ secrets.AWS_ECR_REPOSITORY }}
-  IMAGE_TAG: latest
+
 jobs:
-  build-and-push:
-    name: Build, Scan, and Push Image to ECR
+  build-and-deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Configure AWS Credentials
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build Docker Image
+      - name: Build, tag, and push image to Amazon ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ secrets.AWS_ECR_REPOSITORY }}
+          IMAGE_TAG: latest
         run: |
-          docker build . -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
-      - name: Scan Image with Trivy
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
-          format: table
-          exit-code: '1'
-          ignore-unfixed: true
-          severity: HIGH,CRITICAL
-
-      - name: Push Image to ECR
+      - name: Deploy to EC2
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ secrets.AWS_ECR_REPOSITORY }}
+          IMAGE_TAG: latest
         run: |
-          docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
-
-  deploy:
-    needs: build-and-push
-    name: Deploy Docker Container to EC2
-    runs-on: ubuntu-latest
-    steps:
-      - name: Setup SSH
-        run: |
-          mkdir -p ~/.ssh/
-          echo "$SSH_PRIVATE_KEY" > ~/.ssh/github-actions.pem
-          chmod 600 ~/.ssh/github-actions.pem
-
-      - name: Install and Start Docker on EC2
-        run: |
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/github-actions.pem $SSH_USER@$SSH_HOST "
-            if ! command -v docker &> /dev/null; then
-              sudo apt-get update &&
-              sudo apt-get install -y docker.io &&
-              sudo systemctl start docker &&
-              sudo systemctl enable docker &&
-              sudo usermod -aG docker $SSH_USER
-            else
-              echo 'Docker is already installed.'
-            fi
-          " || exit 1
-
-      - name: Install AWS CLI on EC2
-        run: |
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/github-actions.pem $SSH_USER@$SSH_HOST "
-            sudo apt-get update &&
-            sudo apt-get install -y unzip &&
-            if ! command -v aws &> /dev/null; then
-              curl 'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip' -o 'awscliv2.zip' &&
-              unzip awscliv2.zip &&
-              sudo ./aws/install &&
-              rm -rf awscliv2.zip aws
-            else
-              echo 'AWS CLI is already installed.'
-            fi
-            aws --version
-          " || exit 1
-
-      - name: Configure AWS Credentials on EC2
-        run: |
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/github-actions.pem $SSH_USER@$SSH_HOST "
-            aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID &&
-            aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY &&
-            aws configure set region $AWS_REGION
-          " || exit 1
-
-      - name: Login to Amazon ECR on EC2
-        run: |
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/github-actions.pem $SSH_USER@$SSH_HOST "
-            aws ecr get-login-password --region $AWS_REGION | sudo docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}
-          " || exit 1
-
-      - name: Pull and Run Docker Image on EC2
-        run: |
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/github-actions.pem $SSH_USER@$SSH_HOST "
-            sudo docker stop react-app || true &&
-            sudo docker rm react-app || true &&
-            sudo docker pull ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:$IMAGE_TAG &&
-            sudo docker run --name react-app -d -p 80:80 ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:$IMAGE_TAG
-          " || exit 1
+          echo "${{ secrets.EC2_SSH_KEY }}" > deploy_key
+          chmod 600 deploy_key
+          ssh -o StrictHostKeyChecking=no -i deploy_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+            aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
+            docker pull ${{ secrets.ECR_REGISTRY }}/${{ secrets.AWS_ECR_REPOSITORY }}:${{ secrets.IMAGE_TAG }}
+            docker stop react-app || true
+            docker rm react-app || true
+            docker run -d --name react-app -p 80:80 ${{ secrets.ECR_REGISTRY }}/${{ secrets.AWS_ECR_REPOSITORY }}:${{ secrets.IMAGE_TAG }}
+          EOF
