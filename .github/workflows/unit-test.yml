@@ -1,0 +1,46 @@
+name: Unit Test
+on:
+  pull_request:
+    types: [opened, reopened]  # Trigger when PR is opened or reopened
+    branches: [main]
+  workflow_dispatch:  # Optional manual trigger
+
+jobs:
+  # Job 1: Run unit tests
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run Unit Tests
+        run: npm test
+
+  # Job 2: Build application after tests pass
+  build:
+    name: Build Application
+    needs: test  # Only run if tests pass
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build the App
+        run: npm run build
