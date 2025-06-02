@@ -90,7 +90,7 @@ const MotoSensei = () => {
 
         {/* Footer */}
         <div className="text-slate-500 text-sm animate-fade-in-up font-normal" style={{animationDelay: '0.4s'}}>
-          © 2024 Moto Sensei. All rights reserved.
+          © 2025 Moto Sensei. All rights reserved.
         </div>
       </div>
 
@@ -115,3 +115,4 @@ const MotoSensei = () => {
 };
 
 export default MotoSensei;
+
