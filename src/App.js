@@ -12,8 +12,4 @@ function App() {
 
 export default App;
 
-  //protected-branch-02
-  //protected-branch-02
-
-
 
