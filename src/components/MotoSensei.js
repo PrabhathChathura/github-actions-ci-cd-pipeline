@@ -81,7 +81,7 @@ const MotoSensei = () => {
               >
                 <span className="text-xl text-orange-500">📞</span>
                 <span className="text-slate-300 font-medium text-sm group-hover:text-slate-50 transition-colors">
-                  +94 777 291 450
+                  +94 777 450 450
                 </span>
               </a>
             </div>
@@ -90,7 +90,7 @@ const MotoSensei = () => {
 
         {/* Footer */}
         <div className="text-slate-500 text-sm animate-fade-in-up font-normal" style={{animationDelay: '0.4s'}}>
-          © 2024 Moto Sensei. All rights reserved.
+          © 2025 Moto Sensei. All rights reserved.
         </div>
       </div>
 
@@ -115,3 +115,4 @@ const MotoSensei = () => {
 };
 
 export default MotoSensei;
+
